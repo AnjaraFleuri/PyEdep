@@ -236,6 +236,7 @@ class Event:
         
         # Get light yields
         ly_sampled1, ly_sampled2 = self.get_light_yield_at_sampled_position()
+        
         # Ensure neither ly_sampled1 nor ly_sampled2 is zero
         while ly_sampled1 == 0 or ly_sampled2 == 0:
             ly_sampled1, ly_sampled2 = self.get_light_yield_at_sampled_position()

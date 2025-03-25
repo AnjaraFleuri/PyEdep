@@ -102,7 +102,8 @@ class Writer:
 
             # proc = str(self.event.info['nu_proc']) + '-' + str(self.event.info['nu_nucl'])
             # v = self.stat.setdefault(proc, 0)
-            # self.stat[proc] = v + 1
+            # self.stat[proc] = v + 
+            
             self.Event_ID[0] = self.event.info['Event_ID']
             self.nu_pdg[0] = self.event.info['nu_pdg']
             self.nu_xs[0] = self.event.info['nu_xs']
