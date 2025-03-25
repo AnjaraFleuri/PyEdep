@@ -68,6 +68,7 @@ class Event:
         self.info['Q_depoTotal_th_75keV'] = 0
         self.info['Q_depoTotal_th_500keV'] = 0
         self.info['L_depoTotal_avg_APEX_WP'] = 0
+        self.info['L_depoTotal_avg_APEX_WP2'] = 0
         self.info['E_depoList'] = np.zeros(8) # lepton, proton, neutron, pi+-, pi0, gamma, alpha, others.
         self.info['E_depoList_track'] = np.zeros(8)
         self.info['Q_depoList']               = np.zeros(8)
@@ -75,6 +76,7 @@ class Event:
         self.info['Q_depoList_th_500keV']     = np.zeros(8)
         self.info['Q_depoList_dots_th_75keV'] = np.zeros(8)
         self.info['L_depoList_avg_APEX_WP'] = np.zeros(8)
+        self.info['L_depoList_avg_APEX_WP2'] = np.zeros(8)
         self.info['N_parList'] = np.zeros(8) # lepton, proton, neutron, pi+-, pi0, gamma, alpha, others.
         self.info['nu_pdg'] = 0
         self.info['nu_xs'] = self.vertex.GetCrossSection()
@@ -161,6 +163,7 @@ class Event:
             self.tracks[i].energy['depoTotal_charge_th_75keV'] = 0
             self.tracks[i].energy['depoTotal_charge_th_500keV'] = 0
             self.tracks[i].energy['depoTotal_light_avg_APEX_WP'] = 0
+            self.tracks[i].energy['depoTotal_light_avg_APEX_WP2'] = 0
             self.tracks[i].length['selfDepo'] = 0
             self.tracks[i].association['depoList'] = []
             self.tracks[i].association['children'] = []
@@ -175,16 +178,52 @@ class Event:
                 track.association['ancestor'] = parId
                 parId = self.tracks[parId].GetParentId()
 
-    # Function to sample light yield from the histogram
-    def SampledLYFromHist(self):
-        # Open the ROOT file and retrieve the histogram
-        file = TFile('ly_histogram.root')
-        hist = file.Get('ly_hist')
-        cumulative_hist = hist.GetCumulative() # Create a cumulative distribution from the histogram (cumulative sum of entries)
-        rand_num = random.uniform(0, cumulative_hist.GetMaximum()) # Generate a random number between 0 and the maximum value of the cumulative histogram
-        bin = cumulative_hist.FindBin(rand_num) # Find the bin corresponding to the random number
-        sampled_light_yield = hist.GetBinCenter(bin) # Get the light yield value corresponding to this bin
-        return sampled_light_yield
+    #Section For Light Yield sampling ####################################################
+    def get_light_yield_at_sampled_position(self):
+        # Open the 2D light yield map
+        file = TFile('apex_ly_map.root')
+        lymap = file.Get('ly_map')
+        
+        if not lymap:
+            raise ValueError("2D LY map not found in apex_ly_map.root")
+
+        # Get number of bins
+        x_bins = lymap.GetNbinsX()
+        y_bins = lymap.GetNbinsY()
+
+        # Randomly select a bin within the LY map
+        bin_x = np.random.randint(1, x_bins + 1)
+        bin_y = np.random.randint(1, y_bins + 1)
+
+        # Convert bin index to real-world coordinates
+        true_x_pos = lymap.GetXaxis().GetBinCenter(bin_x)
+        true_y_pos = lymap.GetYaxis().GetBinCenter(bin_y)
+
+        # Ensure positions stay within bounds
+        true_x_pos = np.clip(true_x_pos, -6.0, 6.0)
+        true_y_pos = np.clip(true_y_pos, -6.5, 6.5)
+
+        # Uncertainties used (m)
+        sigma_x = 0.28
+        sigma_y = 0.47
+
+        # Sample position using Gaussian
+        sampled_x = np.random.normal(loc=true_x_pos, scale=sigma_x)                    
+        sampled_y = np.random.normal(loc=true_y_pos, scale=sigma_y)
+
+        # Get light yield at the sampled position
+        bin_x_truePos = lymap.GetXaxis().FindBin(true_x_pos)
+        bin_y_truePos = lymap.GetYaxis().FindBin(true_y_pos)
+        
+        # Get light yield at the sampled position with uncertainties
+        bin_x_truePosUncert = lymap.GetXaxis().FindBin(sampled_x)
+        bin_y_truePosUncert = lymap.GetYaxis().FindBin(sampled_y)
+
+        # Get light yield values
+        ly_true_pos = lymap.GetBinContent(bin_x_truePos, bin_y_truePos)
+        ly_true_pos_uncert = lymap.GetBinContent(bin_x_truePosUncert, bin_y_truePosUncert)
+
+        return ly_true_pos, ly_true_pos_uncert
     
     # ------------------------
     def ReadEnergyDepo(self, detName):
@@ -194,12 +233,19 @@ class Event:
         # depoList = self.FindDepoListFromTrack(1)
         # depoEnergy = np.sum([depo.GetEnergyDeposit() for depo in self.depos[depoList]])
         # print('debug: muon deposit energy:', depoEnergy)
-        mm2cm = 0.1
+        
+        # Get light yields
+        ly_sampled1, ly_sampled2 = self.get_light_yield_at_sampled_position()
+        # Ensure neither ly_sampled1 nor ly_sampled2 is zero
+        while ly_sampled1 == 0 or ly_sampled2 == 0:
+            ly_sampled1, ly_sampled2 = self.get_light_yield_at_sampled_position()
 
+        mm2cm = 0.1
+        # Proceed with calculations
         for i, depo in enumerate(self.depos):
             trkId = depo.Contrib[0]
             edep = depo.GetEnergyDeposit()
-            trkLength = depo.GetTrackLength() *mm2cm
+            trkLength = depo.GetTrackLength() * mm2cm
             Qdep = self.ChargeBirksLaw(edep, trkLength)
             track = self.tracks[trkId]
             track.association['depoList'].append(i)
@@ -216,12 +262,15 @@ class Event:
             # the overall photon collection efficiency (PCE) is  PCE = light_yield_number / 21622
             # (dL/W_ph)*PCE = (dL/19.5eV)*PCE = number of photons (taking into account Birks model)
             Ldep = edep - Qdep
-            ly_sampled = self.SampledLYFromHist()
-            PCE = ly_sampled/21622.0  
-            nPE_sampled = (Ldep*1000000/19.5)*PCE
+            PCE1 = ly_sampled1 / 21622.0
+            PCE2 = ly_sampled2 / 21622.0   
+            nPE_sampled = (Ldep * 1000000 / 19.5) * PCE1
             nPE_detected = random.gauss(nPE_sampled, math.sqrt(nPE_sampled))
-            Ldep_avg_detected = nPE_detected*19.5/1000000/PCE
+            Ldep_avg_detected = nPE_detected * 19.5 / 1000000 / PCE1
+            Ldep_avg_detected2 = nPE_detected * 19.5 / 1000000 / PCE2
             track.energy['depoTotal_light_avg_APEX_WP'] += Ldep_avg_detected
+            track.energy['depoTotal_light_avg_APEX_WP2'] += Ldep_avg_detected2
+
  
 
     # ------------------------
@@ -312,7 +361,8 @@ class Event:
             depoQ        = self.GetChargeDepoWithDesendents(trkId)[0]
             depoQ_75keV  = self.GetChargeDepoWithDesendents(trkId)[1]
             depoQ_500keV = self.GetChargeDepoWithDesendents(trkId)[2]
-            depoLY = self.GetLightDepoWithDesendents(trkId)[0]
+            depoLY = self.GetLightDepoWithDesendents(trkId)
+            depoLY2 = self.GetLightDepoWithDesendents2(trkId)
             mom = particle.GetMomentum()
             mass = mom.M()
             KE = mom.E() - mass
@@ -323,6 +373,7 @@ class Event:
             self.info['Q_depoTotal_th_500keV'] += depoQ_500keV
             self.info['Q_depoTotal_dots_th_75keV'] += depoQ_dots
             self.info['L_depoTotal_avg_APEX_WP'] += depoLY
+            self.info['L_depoTotal_avg_APEX_WP2'] += depoLY2
             # fill E_availList: lepton, proton, neutron, pi+-, pi0, gamma, alpha, others.
             if (pdg in [13, -13, 11, -11]):
                 self.info['E_avail'] += (KE + mass)
@@ -334,6 +385,7 @@ class Event:
                 self.info['Q_depoList_th_500keV'][0]      += depoQ_500keV
                 self.info['Q_depoList_dots_th_75keV'][0]  += depoQ_dots
                 self.info['L_depoList_avg_APEX_WP'][0] += depoLY
+                self.info['L_depoList_avg_APEX_WP2'][0] += depoLY2
                 self.info['N_parList'][0] += 1
             elif (pdg == 2212):
                 self.info['E_avail'] += KE
@@ -345,6 +397,7 @@ class Event:
                 self.info['Q_depoList_th_500keV'][1]      += depoQ_500keV
                 self.info['Q_depoList_dots_th_75keV'][1]  += depoQ_dots
                 self.info['L_depoList_avg_APEX_WP'][1] += depoLY
+                self.info['L_depoList_avg_APEX_WP2'][1] += depoLY2
                 self.info['N_parList'][1] += 1
             elif (pdg == 2112):
                 self.info['E_avail'] += KE
@@ -356,6 +409,7 @@ class Event:
                 self.info['Q_depoList_th_500keV'][2]      += depoQ_500keV
                 self.info['Q_depoList_dots_th_75keV'][2]  += depoQ_dots
                 self.info['L_depoList_avg_APEX_WP'][2] += depoLY
+                self.info['L_depoList_avg_APEX_WP2'][2] += depoLY2
                 self.info['N_parList'][2] += 1
             elif (pdg in [211, -211]):
                 self.info['E_avail'] += (KE + mass)
@@ -367,6 +421,7 @@ class Event:
                 self.info['Q_depoList_th_500keV'][3]      += depoQ_500keV
                 self.info['Q_depoList_dots_th_75keV'][3]  += depoQ_dots
                 self.info['L_depoList_avg_APEX_WP'][3] += depoLY
+                self.info['L_depoList_avg_APEX_WP2'][3] += depoLY2
                 self.info['N_parList'][3] += 1
             elif (pdg == 111):
                 self.info['E_avail'] += (KE + mass)
@@ -378,6 +433,7 @@ class Event:
                 self.info['Q_depoList_th_500keV'][4]      += depoQ_500keV
                 self.info['Q_depoList_dots_th_75keV'][4]  += depoQ_dots
                 self.info['L_depoList_avg_APEX_WP'][4] += depoLY
+                self.info['L_depoList_avg_APEX_WP2'][4] += depoLY2
                 self.info['N_parList'][4] += 1
             elif (pdg == 22):
                 self.info['E_avail'] += (KE + mass)
@@ -389,6 +445,7 @@ class Event:
                 self.info['Q_depoList_th_500keV'][5]      += depoQ_500keV
                 self.info['Q_depoList_dots_th_75keV'][5]  += depoQ_dots
                 self.info['L_depoList_avg_APEX_WP'][5] += depoLY
+                self.info['L_depoList_avg_APEX_WP2'][5] += depoLY2
                 self.info['N_parList'][5] += 1
             elif (pdg == 1000020040):
                 self.info['E_avail'] += KE
@@ -400,6 +457,7 @@ class Event:
                 self.info['Q_depoList_th_500keV'][6]      += depoQ_500keV
                 self.info['Q_depoList_dots_th_75keV'][6]  += depoQ_dots
                 self.info['L_depoList_avg_APEX_WP'][6] += depoLY
+                self.info['L_depoList_avg_APEX_WP2'][6] += depoLY2
                 self.info['N_parList'][6] += 1
             else:
                 self.info['E_avail'] += KE
@@ -411,6 +469,7 @@ class Event:
                 self.info['Q_depoList_th_500keV'][7]      += depoQ_500keV
                 self.info['Q_depoList_dots_th_75keV'][7]  += depoQ_dots
                 self.info['L_depoList_avg_APEX_WP'][7] += depoLY
+                self.info['L_depoList_avg_APEX_WP2'][7] += depoLY2
                 self.info['N_parList'][7] += 1
 
     # ------------------------
@@ -512,10 +571,18 @@ class Event:
         light_avg_APEX_WP = track.energy['depoTotal_light_avg_APEX_WP']
         children = track.association['children']
         for childId in children:
-            light_avg_APEX_WP += self.GetLightDepoWithDesendents(childId)[0]
+            light_avg_APEX_WP += self.GetLightDepoWithDesendents(childId)
         
         return light_avg_APEX_WP
 
+    def GetLightDepoWithDesendents2(self, trkId):
+        track = self.tracks[trkId]
+        light_avg_APEX_WP2 = track.energy['depoTotal_light_avg_APEX_WP2']
+        children = track.association['children']
+        for childId in children:
+            light_avg_APEX_WP2 += self.GetLightDepoWithDesendents2(childId)
+        
+        return light_avg_APEX_WP2
     #-----------------------
     def GetEnuFromFileName(self):
         # This is used for Marley low energy files

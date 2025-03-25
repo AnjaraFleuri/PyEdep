@@ -78,8 +78,14 @@ class Writer:
         self.L_depoTotal_avg_APEX_WP = array('f', [0]) 
         self.T_out.Branch('L_depoTotal_avg_APEX_WP', self.L_depoTotal_avg_APEX_WP, 'L_depoTotal_avg_APEX_WP/F')
 
+        self.L_depoTotal_avg_APEX_WP2 = array('f', [0]) 
+        self.T_out.Branch('L_depoTotal_avg_APEX_WP2', self.L_depoTotal_avg_APEX_WP2, 'L_depoTotal_avg_APEX_WP2/F')
+
         self.L_depoList_avg_APEX_WP = np.zeros((8,), dtype=np.float32) 
         self.T_out.Branch('L_depoList_avg_APEX_WP', self.L_depoList_avg_APEX_WP, 'L_depoList_avg_APEX_WP[8]]/F')
+
+        self.L_depoList_avg_APEX_WP2 = np.zeros((8,), dtype=np.float32) 
+        self.T_out.Branch('L_depoList_avg_APEX_WP2', self.L_depoList_avg_APEX_WP2, 'L_depoList_avg_APEX_WP2[8]]/F')
 
         self.N_parList = np.zeros((8,), dtype=np.int32) # number of particles for: lepton, proton, neutron, pi+-, pi0, gamma, alpha, others.
         self.T_out.Branch('N_parList', self.N_parList, 'N_parList[8]/I')
@@ -112,6 +118,7 @@ class Writer:
             self.Q_depoTotal_th_500keV[0] = self.event.info['Q_depoTotal_th_500keV']
             self.Q_depoTotal_dots_th_75keV[0] = self.event.info['Q_depoTotal_dots_th_75keV']
             self.L_depoTotal_avg_APEX_WP[0] = self.event.info['L_depoTotal_avg_APEX_WP']
+            self.L_depoTotal_avg_APEX_WP2[0] = self.event.info['L_depoTotal_avg_APEX_WP2']
 
             self.E_availList[:] = self.event.info['E_availList']
             self.E_depoList[:] = self.event.info['E_depoList']
@@ -121,11 +128,13 @@ class Writer:
             self.Q_depoList_th_500keV[:] = self.event.info['Q_depoList_th_500keV']
             self.Q_depoList_dots_th_75keV[:] = self.event.info['Q_depoList_dots_th_75keV']
             self.L_depoList_avg_APEX_WP[:] = self.event.info['L_depoList_avg_APEX_WP']
+            self.L_depoList_avg_APEX_WP2[:] = self.event.info['L_depoList_avg_APEX_WP2']
 
             self.N_parList[:] = self.event.info['N_parList']
 
             self.T_out.Fill()
 
+        self.f_out.cd()
         self.T_out.Write()
         # print(self.stat)
 
