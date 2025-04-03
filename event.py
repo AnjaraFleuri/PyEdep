@@ -187,21 +187,17 @@ class Event:
         if not lymap:
             raise ValueError("2D LY map not found in apex_ly_map.root")
 
-        # Get number of bins
-        x_bins = lymap.GetNbinsX()
-        y_bins = lymap.GetNbinsY()
+        # Get axis range from LY map
+        x_min, x_max = lymap.GetXaxis().GetXmin(), lymap.GetXaxis().GetXmax()
+        y_min, y_max = lymap.GetYaxis().GetXmin(), lymap.GetYaxis().GetXmax()
 
-        # Randomly select a bin within the LY map
-        bin_x = np.random.randint(1, x_bins + 1)
-        bin_y = np.random.randint(1, y_bins + 1)
+        # Directly generate a random true position within the LY map range
+        true_x_pos = np.random.uniform(x_min, x_max)
+        true_y_pos = np.random.uniform(y_min, y_max)
 
-        # Convert bin index to real-world coordinates
-        true_x_pos = lymap.GetXaxis().GetBinCenter(bin_x)
-        true_y_pos = lymap.GetYaxis().GetBinCenter(bin_y)
-
-        # Ensure positions stay within bounds
-        true_x_pos = np.clip(true_x_pos, -6.0, 6.0)
-        true_y_pos = np.clip(true_y_pos, -6.5, 6.5)
+        # Find the corresponding bin for this true position
+        bin_x_truePos = lymap.GetXaxis().FindBin(true_x_pos)
+        bin_y_truePos = lymap.GetYaxis().FindBin(true_y_pos)
 
         # Uncertainties used (m)
         sigma_x = 0.28
@@ -211,11 +207,7 @@ class Event:
         sampled_x = np.random.normal(loc=true_x_pos, scale=sigma_x)                    
         sampled_y = np.random.normal(loc=true_y_pos, scale=sigma_y)
 
-        # Get light yield at the sampled position
-        bin_x_truePos = lymap.GetXaxis().FindBin(true_x_pos)
-        bin_y_truePos = lymap.GetYaxis().FindBin(true_y_pos)
-        
-        # Get light yield at the sampled position with uncertainties
+        # Find the corresponding bin for the sampled position
         bin_x_truePosUncert = lymap.GetXaxis().FindBin(sampled_x)
         bin_y_truePosUncert = lymap.GetYaxis().FindBin(sampled_y)
 
@@ -224,6 +216,7 @@ class Event:
         ly_true_pos_uncert = lymap.GetBinContent(bin_x_truePosUncert, bin_y_truePosUncert)
 
         return ly_true_pos, ly_true_pos_uncert
+
     
     # ------------------------
     def ReadEnergyDepo(self, detName):
@@ -236,7 +229,7 @@ class Event:
         
         # Get light yields
         ly_sampled1, ly_sampled2 = self.get_light_yield_at_sampled_position()
-        
+ 
         # Ensure neither ly_sampled1 nor ly_sampled2 is zero
         while ly_sampled1 == 0 or ly_sampled2 == 0:
             ly_sampled1, ly_sampled2 = self.get_light_yield_at_sampled_position()
